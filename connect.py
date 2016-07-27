@@ -64,7 +64,7 @@ def checkRunning():
 def reconnect():
 	success = False
 	i = 0
-	trialTime = 100
+	trialTime = 3
 	while success == False and i < trialTime:
 		i = i + 1
 		status = False
@@ -73,13 +73,13 @@ def reconnect():
 			sh("touch /var/run/xl2tpd/l2tp-control")
 			sh("rm -rf /var/run/xl2tpd/l2tp-control")
 			sh("touch /var/run/xl2tpd/l2tp-control")
-			time.sleep(0.2) 
+			time.sleep(0.5) 
 			sh("service strongswan restart")
-			time.sleep(0.2) 
+			time.sleep(0.5) 
 			sh("service xl2tpd force-reload")
-			time.sleep(0.2) 
+			time.sleep(0.8) 
 			sh("service xl2tpd restart")
-			time.sleep(0.2)
+			time.sleep(0.8)
 			status = checkRunning()
 			
 		print("ipsec up......")
@@ -96,61 +96,77 @@ def reconnect():
 			print("ipsec up failed, try again{}".format(i))
 		if success == False and i >= trialTime:
 			raise Exception("\n\nip address failed, try again")
-def login():
+def login(waitSeconds=5):
 	# need a few seconds to login 
+	time.sleep(1)
 	auth = r'echo "c XXX-YOUR-CONNECTION-NAME-XXX {} {}" > /var/run/xl2tpd/l2tp-control '.format(user,pwd)
 	sh(auth)
-	i = 0
-	time.sleep(6)
-	# wait for a few seconds to check
-	while i < 2:
-		time.sleep(1)
-		i = i + 1
-		print("elaspTime: {}s".format(i))
-		try:
-			ppp, stderr = run_script(r"ip a | grep ppp")
-			return True
-		except: pass
+	# wait for a few seconds to check auth
+	print("waiting {}s for checking in...".format(waitSeconds))
+	time.sleep(waitSeconds)
+	try:
+		ppp, stderr = run_script(r"ip a | grep ppp")
+		return True
+	except: pass
 	return False
 
 def getGW():
 	stdout, stderror = run_script(r"route -n | grep UG | awk '{print $2}' | sort | uniq")
 	return stdout
+
 def getPTP():
 	try: stdout, stderror = run_script(r'ip a | grep -o -P "(?<=peer ).+(?=\/)" ')
 	except: return False
 	return stdout
 
 i = 0
-loginTime = 20
-while i < loginTime:
+# 90 <= Total seconds of Wait
+trialTimes = 6
+# 90 or 120 recomanded
+WaitSecondsToRetryDependOnServerResponds = 30
+while i <= trialTimes:
 	i = i + 1
-	reconnect()
-	print("try to login")
-	if login():
+	reconnect() # successfully ipsec up
+	print("try to login with user and password")
+	if login(waitSeconds=3):
 		print("ppp established")
 		break
-	if i >= loginTime:
-		raise  Exception("\n\nunkown error, please try again")
-	print("login did not bring up ppp. try again")
+	if i >= trialTimes:
+		raise  Exception("\n\ncannot login with user name and password. \nunkown error, please try again\nTips: increase login waitSeconds")
+	print("login did not bring up ppp. \nYour IP may be blocked for a while. Try all over again. Max time:{} Now:{}".format(trialTimes, i))
+	time.sleep(WaitSecondsToRetryDependOnServerResponds)
 
 print("ppp established, adding route...")
+try:
+	std, e = run_script("ifconfig ppp")
+	print(std)
+except:
+	print("error occur when ifconfig")
+
 
 time.sleep(0.5)
 gateway =  getGW()
 
+# getPTP()
+i = 0
+sleepSeconds = 1
+trialTimes = 30
 vpnServerLocalIp = False
-elasp = 0
 while not vpnServerLocalIp:
-	time.sleep(1)
-	elasp += 1
-	print("elasp {}s".format(elasp))
-	vpnServerLocalIp = getPTP()
-	if elasp > 30:
-		print("ppp shut down unexpectedly, please try again")
+	time.sleep(sleepSeconds)
+	i = i + 1
+	if i >= trialTimes:
+		print("ppp did not bright up after {} seconds, please increase its waiting time".format(trialTimes))
 		sys.exit(1)
+	try:
+		vpnServerLocalIp = getPTP()
+	except: pass
+print("P-t-P estabished")
+
 
 sh("route add {} gw {}".format(ip, gateway))
+print(r"route add -net default gw {}".format(vpnServerLocalIp))
 sh("route add -net default gw {}".format(vpnServerLocalIp))
 
 print("l2tp connected")
+print("finished")
