@@ -1,5 +1,10 @@
+# WireGuard is new, fast and recommanded vpn than L2TP.
+
+# This script is unstable and not maintained any more. Please find a better one.
+
 # l2tp-client
 script for l2tp (only pskshared secret) client tested on debian 8
+
 
 ## install packages:
 ```sh
